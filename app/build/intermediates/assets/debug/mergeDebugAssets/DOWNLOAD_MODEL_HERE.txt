@@ -1,0 +1,29 @@
+# MediaPipe Model Required
+
+This file is a placeholder. You need to download the actual MediaPipe Pose Landmarker model.
+
+## Download Instructions:
+
+1. **Download the model file:**
+   - URL: https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task
+   - File size: ~12 MB
+
+2. **Replace this file:**
+   - Delete this `DOWNLOAD_MODEL_HERE.txt` file
+   - Place the downloaded `pose_landmarker_lite.task` file in this directory
+
+3. **Verify:**
+   - The file should be named exactly: `pose_landmarker_lite.task`
+   - Location: `app/src/main/assets/pose_landmarker_lite.task`
+
+## Why is this needed?
+
+The MediaPipe Pose Landmarker model is required for AI-powered pose detection. It's not included in the repository due to its size (~12 MB).
+
+## Alternative Models:
+
+You can also use other MediaPipe pose models:
+- `pose_landmarker_full.task` - More accurate but slower
+- `pose_landmarker_heavy.task` - Most accurate but slowest
+
+If using a different model, update the MODEL_NAME constant in `MediaPipePoseDetector.kt`.

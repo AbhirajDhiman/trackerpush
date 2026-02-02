@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Pushup Tracker</string>
+    <style name="Base.Theme.PushupTracker" parent="Theme.Material3.DayNight.NoActionBar">
+        
+        
+    </style>
+    <style name="Theme.PushupTracker" parent="Base.Theme.PushupTracker"/>
+</resources>
