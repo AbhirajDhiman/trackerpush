@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp"
+    android:background="#f5f5f5">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="🔧 Pushup Tracker Diagnostic"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        android:textColor="#333"
+        android:layout_marginBottom="20dp"/>
+
+    <Button
+        android:id="@+id/btnTestApp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Test App Functionality"
+        android:backgroundTint="#4CAF50"
+        android:textColor="#fff"
+        android:layout_marginBottom="8dp"/>
+
+    <Button
+        android:id="@+id/btnTestCamera"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Test Camera"
+        android:backgroundTint="#2196F3"
+        android:textColor="#fff"
+        android:layout_marginBottom="8dp"/>
+
+    <Button
+        android:id="@+id/btnTestMediaPipe"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Test MediaPipe"
+        android:backgroundTint="#FF9800"
+        android:textColor="#fff"
+        android:layout_marginBottom="8dp"/>
+
+    <Button
+        android:id="@+id/btnTestPushup"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Test Pushup Logic"
+        android:backgroundTint="#9C27B0"
+        android:textColor="#fff"
+        android:layout_marginBottom="16dp"/>
+
+    <Button
+        android:id="@+id/btnRunAll"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="▶️ RUN ALL TESTS"
+        android:textStyle="bold"
+        android:backgroundTint="#F44336"
+        android:textColor="#fff"
+        android:layout_marginBottom="20dp"/>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Results:"
+        android:textStyle="bold"
+        android:textSize="16sp"
+        android:layout_marginBottom="8dp"/>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="#fff"
+        android:padding="8dp">
+
+        <TextView
+            android:id="@+id/tvResults"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Click buttons to run tests..."
+            android:textSize="12sp"
+            android:fontFamily="monospace"
+            android:textColor="#333"
+            android:lineSpacingExtra="4dp"/>
+
+    </ScrollView>
+
+</LinearLayout>

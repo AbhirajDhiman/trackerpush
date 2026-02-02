@@ -1,32 +1,44 @@
 package com.fitness.pushuptracker.viewmodel
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.camera.view.PreviewView
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.viewModelScope
+import com.fitness.pushuptracker.detector.MediaPipePoseDetector
 import com.fitness.pushuptracker.detector.PushupCounter
 import com.fitness.pushuptracker.detector.PushupResult
 import com.fitness.pushuptracker.detector.PushupState
 import com.fitness.pushuptracker.detector.PushupType
+import com.fitness.pushuptracker.camera.CameraProcessor
 import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarkerResult
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /**
- * Workout ViewModel - State Management
- * ====================================
- * Manages workout state and coordinates between camera and counter
- * - Thread-safe state updates
- * - Lifecycle-aware processing
- * - Performance monitoring
+ * COMPLETE FIXED WorkoutViewModel
+ * ===============================
+ * ✅ Fixes:
+ * 1. Properly connects Camera → MediaPipe → PushupCounter
+ * 2. Uses correct MediaPipe initialization
+ * 3. Handles errors properly
+ * 4. Thread-safe state management
  */
 
-class WorkoutViewModel : ViewModel() {
+class WorkoutViewModel(application: Application) : AndroidViewModel(application) {
     
-    // Pushup counter instance
-    private val pushupCounter = PushupCounter(strictMode = false)
+    companion object {
+        private const val TAG = "WorkoutViewModel"
+    }
     
-    // Workout state flows (UI observes these)
+    // ===== COMPONENTS =====
+    private lateinit var pushupCounter: PushupCounter
+    private lateinit var poseDetector: MediaPipePoseDetector
+    private lateinit var cameraProcessor: CameraProcessor
+    
+    // ===== STATE FLOWS =====
     private val _pushupResult = MutableStateFlow(PushupResult())
     val pushupResult: StateFlow<PushupResult> = _pushupResult.asStateFlow()
     
@@ -39,102 +51,197 @@ class WorkoutViewModel : ViewModel() {
     private val _fps = MutableStateFlow(0)
     val fps: StateFlow<Int> = _fps.asStateFlow()
     
-    // Performance tracking
-    private val frameTimestamps = ArrayDeque<Long>(30)
-    private var lastFrameTime = 0L
-    
-    // Workout session data
     private val _workoutDuration = MutableStateFlow(0L)
     val workoutDuration: StateFlow<Long> = _workoutDuration.asStateFlow()
     
+    private val _isCameraInitialized = MutableStateFlow(false)
+    val isCameraInitialized: StateFlow<Boolean> = _isCameraInitialized.asStateFlow()
+    
+    // ===== PERFORMANCE TRACKING =====
+    private var lastFrameTime = 0L
+    private var frameCount = 0
     private var workoutStartTime = 0L
     
+    // ===== INITIALIZATION =====
     init {
-        // Observe counter results
-        viewModelScope.launch {
-            pushupCounter.pushupResult.collect { result ->
-                _pushupResult.value = result
-                
-                // Update workout active state based on pushup state
-                _isWorkoutActive.value = result.state != PushupState.IDLE
-            }
+        android.util.Log.d(TAG, "🔄 Initializing WorkoutViewModel...")
+        initializeComponents()
+    }
+    
+    private fun initializeComponents() {
+        try {
+            // Initialize pushup counter
+            pushupCounter = PushupCounter(strictMode = false)
+            
+            // Initialize pose detector
+            poseDetector = MediaPipePoseDetector(
+                context = getApplication(),
+                onResult = { result, width, height ->
+                    handlePoseResult(result, width, height)
+                },
+                onError = { error ->
+                    handleError(error)
+                }
+            )
+            
+            poseDetector.initialize()
+            
+            // Initialize camera processor (Correct Constructor)
+            cameraProcessor = CameraProcessor(
+                context = getApplication(),
+                poseDetector = poseDetector
+            )
+            
+            android.util.Log.d(TAG, "✅ Components initialized")
+            
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "❌ Failed to initialize components", e)
+            _errorMessage.value = "Initialization failed: ${e.message}"
         }
     }
     
     /**
-     * Process a frame from MediaPipe
-     * Called from camera background thread
+     * ✅ Start camera - MUST be called from UI
      */
-    fun processFrame(result: PoseLandmarkerResult, width: Int, height: Int) {
-        viewModelScope.launch(Dispatchers.Default) {
-            try {
-                // Debug logs
-                val landmarks = result.landmarks()
-                val count = landmarks.size
-                if (count > 0) {
-                    // Use presence() for detection confidence (score)
-                    val confidence = landmarks.firstOrNull()?.firstOrNull()?.presence()?.orElse(0f) ?: 0f
-                    // Only log every few frames or on state change to avoid spam
-                     android.util.Log.d("ViewModelDebug", "Processed frame: $count landmarks, confidence: $confidence")
+    fun startCamera(
+        previewView: PreviewView,
+        lifecycleOwner: LifecycleOwner
+    ) {
+        try {
+            android.util.Log.d(TAG, "🎥 Starting camera...")
+            
+            // Call startCamera on existing processor
+            cameraProcessor.startCamera(
+                lifecycleOwner = lifecycleOwner,
+                previewView = previewView,
+                onError = { error ->
+                    handleError(error)
                 }
+            )
+            
+            _isCameraInitialized.value = true
+            android.util.Log.d(TAG, "✅ Camera started")
+            
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "❌ Failed to start camera", e)
+            _errorMessage.value = "Camera failed: ${e.message}"
+        }
+    }
 
-                // Track performance
+    fun processFrame(result: PoseLandmarkerResult?, width: Int, height: Int) {
+        handlePoseResult(result, width, height)
+    }
+    
+    /**
+     * ✅ Handle pose detection results - THE KEY CONNECTION!
+     */
+    private fun handlePoseResult(
+        result: PoseLandmarkerResult?,
+        width: Int,
+        height: Int
+    ) {
+        viewModelScope.launch {
+            try {
+                // Update FPS
                 updateFPS()
-                
-                // Process with counter
-                pushupCounter.processFrame(result, width, height)
                 
                 // Update workout duration
                 if (_isWorkoutActive.value && workoutStartTime > 0) {
                     _workoutDuration.value = System.currentTimeMillis() - workoutStartTime
                 }
                 
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    _errorMessage.value = "Processing error: ${e.message}"
+                // Process with pushup counter
+                if (result != null) {
+                    // Debug: Check if person detected
+                    val landmarks = result.landmarks()
+                    if (landmarks.isNotEmpty()) {
+                        // Process frame
+                        pushupCounter.processFrame(result, width, height)
+                        
+                        val currentRes = pushupCounter.getCurrentResult()
+                        
+                        // Heartbeat log every 30 frames
+                        if (frameCount % 30 == 0) {
+                            android.util.Log.d(TAG, "💓 ALIVE | State: ${currentRes.state} | Angles: L=${currentRes.leftElbowAngle}° R=${currentRes.rightElbowAngle}° | Count: ${currentRes.count}")
+                        }
+                        
+                        // Update UI with latest result
+                        _pushupResult.value = currentRes
+                        
+                        // Update workout active state based on pushup state
+                        _isWorkoutActive.value = currentRes.state != PushupState.IDLE
+                    } else {
+                        if (frameCount % 30 == 0) android.util.Log.d(TAG, "⚠️ No person in frame")
+                        // Still update with empty result
+                        _pushupResult.value = pushupCounter.getCurrentResult()
+                    }
+                } else {
+                    android.util.Log.d(TAG, "⚠️ Null result from detector")
                 }
+                
+            } catch (e: Exception) {
+                android.util.Log.e(TAG, "❌ Error processing pose result", e)
             }
         }
     }
     
     /**
-     * Start a new workout session
+     * Update FPS calculation
      */
-    fun startWorkout() {
-        viewModelScope.launch {
-            pushupCounter.reset()
-            workoutStartTime = System.currentTimeMillis()
-            _workoutDuration.value = 0L
-            _isWorkoutActive.value = true
-            clearError()
+    private fun updateFPS() {
+        val currentTime = System.currentTimeMillis()
+        frameCount++
+        
+        if (currentTime - lastFrameTime >= 1000) {
+            _fps.value = frameCount
+            frameCount = 0
+            lastFrameTime = currentTime
         }
     }
     
     /**
-     * Pause the current workout
+     * Start workout session
+     */
+    fun startWorkout() {
+        android.util.Log.d(TAG, "▶️ Starting workout")
+        
+        _isWorkoutActive.value = true
+        workoutStartTime = System.currentTimeMillis()
+        _workoutDuration.value = 0L
+        
+        pushupCounter.reset()
+        clearError()
+    }
+    
+    /**
+     * Pause workout
      */
     fun pauseWorkout() {
+        android.util.Log.d(TAG, "⏸️ Pausing workout")
         _isWorkoutActive.value = false
     }
     
     /**
-     * Resume the workout
+     * Resume workout
      */
     fun resumeWorkout() {
+        android.util.Log.d(TAG, "▶️ Resuming workout")
+        _isWorkoutActive.value = true
+        
         if (workoutStartTime == 0L) {
             workoutStartTime = System.currentTimeMillis()
         }
-        _isWorkoutActive.value = true
     }
     
     /**
-     * End the workout and get final stats
+     * End workout and get summary
      */
     fun endWorkout(): WorkoutSummary {
         val result = _pushupResult.value
         val duration = _workoutDuration.value
         
         _isWorkoutActive.value = false
+        workoutStartTime = 0L
         
         return WorkoutSummary(
             totalReps = result.count,
@@ -146,55 +253,22 @@ class WorkoutViewModel : ViewModel() {
     }
     
     /**
-     * Reset the counter
+     * Reset counter
      */
     fun resetCounter() {
-        viewModelScope.launch {
-            pushupCounter.reset()
-            workoutStartTime = 0L
-            _workoutDuration.value = 0L
-        }
-    }
-    
-    /**
-     * Toggle strict mode
-     */
-    fun toggleStrictMode() {
-        // Would need to recreate counter with new mode
-        // For now, just reset
-        resetCounter()
-    }
-    
-    /**
-     * Update FPS calculation
-     */
-    private fun updateFPS() {
-        val currentTime = System.currentTimeMillis()
+        android.util.Log.d(TAG, "🔄 Resetting counter")
         
-        if (lastFrameTime > 0) {
-            frameTimestamps.addLast(currentTime)
-            
-            // Keep only last 30 frames
-            while (frameTimestamps.size > 30) {
-                frameTimestamps.removeFirst()
-            }
-            
-            // Calculate FPS
-            if (frameTimestamps.size >= 2) {
-                val timeDiff = frameTimestamps.last() - frameTimestamps.first()
-                if (timeDiff > 0) {
-                    _fps.value = ((frameTimestamps.size - 1) * 1000 / timeDiff).toInt()
-                }
-            }
-        }
-        
-        lastFrameTime = currentTime
+        pushupCounter.reset()
+        workoutStartTime = 0L
+        _workoutDuration.value = 0L
+        _pushupResult.value = PushupResult()
     }
     
     /**
-     * Handle errors from camera or detector
+     * Handle errors
      */
     fun handleError(error: String) {
+        android.util.Log.e(TAG, "❌ Error: $error")
         _errorMessage.value = error
     }
     
@@ -223,11 +297,26 @@ class WorkoutViewModel : ViewModel() {
     }
     
     /**
-     * Cleanup when ViewModel is destroyed
+     * Toggle strict mode
+     */
+    fun toggleStrictMode() {
+        pushupCounter.toggleStrictMode()
+    }
+    
+    /**
+     * Clean up resources
      */
     override fun onCleared() {
         super.onCleared()
-        // Cleanup if needed
+        android.util.Log.d(TAG, "🔒 Cleaning up resources...")
+        
+        try {
+            cameraProcessor.stopCamera()
+            poseDetector.close()
+            android.util.Log.d(TAG, "✅ Resources cleaned up")
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "❌ Error during cleanup", e)
+        }
     }
 }
 

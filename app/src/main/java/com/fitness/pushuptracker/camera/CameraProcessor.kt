@@ -194,7 +194,7 @@ class CameraProcessor(
             
             // Log frame captured (sample)
             if (frameCount % 30 == 0) {
-                 android.util.Log.d("CameraDebug", "Frame captured: ${imageProxy.width}x${imageProxy.height} Format:${imageProxy.format}")
+                 android.util.Log.e("REAL_TEST", "📸 Camera frame: ${imageProxy.width}x${imageProxy.height} Format:${imageProxy.format}")
             }
             
             // Process frame with MediaPipe
