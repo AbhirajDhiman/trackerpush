@@ -1,2 +1,18 @@
-# Gradle build files
+# ===== Heap dumps =====
+*.hprof
+
+# ===== Android / Gradle =====
 .gradle/
+build/
+*/build/
+
+# ===== IntelliJ / Android Studio =====
+.idea/
+*.iml
+
+# ===== OS junk =====
+.DS_Store
+Thumbs.db
+
+# ===== Logs =====
+*.log
