@@ -289,10 +289,10 @@ class WorkoutViewModel(application: Application) : AndroidViewModel(application)
             count = result.count,
             formScore = result.formScore,
             currentState = result.state,
-            feedback = result.feedback,
-            leftElbowAngle = result.leftElbowAngle,
-            rightElbowAngle = result.rightElbowAngle,
-            repTime = result.repTime
+            feedback = if (result.feedback.isNotEmpty()) listOf(result.feedback) else emptyList(),
+            leftElbowAngle = result.leftElbowAngle.toInt(),
+            rightElbowAngle = result.rightElbowAngle.toInt(),
+            repTime = 0f // repTime temporarily removed from PushupResult
         )
     }
     

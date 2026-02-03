@@ -1,35 +1,46 @@
 package com.fitness.pushuptracker.ui
 
 import androidx.camera.view.PreviewView
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicText
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.fitness.pushuptracker.detector.PushupState
 import com.fitness.pushuptracker.viewmodel.WorkoutViewModel
 
 /**
- * Workout Screen - Main UI
- * ========================
- * Displays:
- * - Camera preview
- * - Pushup count
- * - Form feedback
- * - Real-time metrics
- * - Controls
+ * Workout Screen - Cyberpunk Redesign
+ * ====================================
+ * A premium, neon-styled workout interface.
  */
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WorkoutScreen(
     viewModel: WorkoutViewModel,
@@ -38,427 +49,273 @@ fun WorkoutScreen(
     val pushupResult by viewModel.pushupResult.collectAsState()
     val isWorkoutActive by viewModel.isWorkoutActive.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
-    val fps by viewModel.fps.collectAsState()
-    val workoutDuration by viewModel.workoutDuration.collectAsState()
     
-    val context = LocalContext.current
-    
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Pushup Tracker") },
-                actions = {
-                    // FPS indicator
-                    Text(
-                        text = "$fps FPS",
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(end = 16.dp)
-                    )
+    // Using formScore as normalized depth (0.0 = Top, 1.0 = Bottom)
+    val currentDepth = pushupResult.formScore
+
+    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+        
+        // 1. Camera Preview (Full Screen)
+        AndroidView(
+            factory = { ctx ->
+                PreviewView(ctx).apply {
+                    implementationMode = PreviewView.ImplementationMode.PERFORMANCE
+                    scaleType = PreviewView.ScaleType.FILL_CENTER
+                    onCameraReady(this)
                 }
-            )
-        }
-    ) { paddingValues ->
+            },
+            modifier = Modifier.fillMaxSize()
+        )
+        
+        // 2. Dark Gradient Overlay (Visibility layer)
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
-        ) {
-            // Camera Preview (full screen)
-            AndroidView(
-                factory = { ctx ->
-                    PreviewView(ctx).apply {
-                        implementationMode = PreviewView.ImplementationMode.PERFORMANCE
-                        onCameraReady(this)
-                    }
-                },
-                modifier = Modifier.fillMaxSize()
-            )
-            
-            // Overlay UI
-            Column(
-                modifier = Modifier.fillMaxSize()
-            ) {
-                // Top info panel
-                TopInfoPanel(
-                    count = pushupResult.count,
-                    type = pushupResult.pushupType.displayName,
-                    state = pushupResult.state,
-                    duration = workoutDuration
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Black.copy(alpha = 0.6f),
+                            Color.Transparent,
+                            Color.Black.copy(alpha = 0.9f)
+                        ),
+                        startY = 0f,
+                        endY = Float.POSITIVE_INFINITY
+                    )
                 )
+        )
+
+        // 3. Main UI Layout
+        Row(modifier = Modifier.fillMaxSize()) {
+            
+            // Left Side: Depth Gauge
+            Box(
+                modifier = Modifier
+                    .width(60.dp)
+                    .fillMaxHeight()
+                    .padding(vertical = 40.dp, horizontal = 12.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                DepthGauge(depth = currentDepth)
+            }
+            
+            // Center & Right: Stats & Controls
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Top: Instruction / Feedback
+                Spacer(modifier = Modifier.height(30.dp))
+                StatusPill(state = pushupResult.state, feedback = pushupResult.feedback)
                 
                 Spacer(modifier = Modifier.weight(1f))
                 
-                // Feedback panel
-                if (pushupResult.feedback.isNotEmpty() || pushupResult.invalidReasons.isNotEmpty()) {
-                    FeedbackPanel(
-                        feedback = pushupResult.feedback,
-                        invalidReasons = pushupResult.invalidReasons
-                    )
-                }
+                // Center: BIG Counter
+                NeonCounter(count = pushupResult.count)
                 
-                // Metrics panel
-                MetricsPanel(
-                    leftElbowAngle = pushupResult.leftElbowAngle,
-                    rightElbowAngle = pushupResult.rightElbowAngle,
-                    formScore = pushupResult.formScore,
-                    repTime = pushupResult.repTime
-                )
+                Spacer(modifier = Modifier.weight(1f))
                 
-                // Control buttons
-                ControlPanel(
+                // Bottom: Controls
+                CyberControls(
                     isWorkoutActive = isWorkoutActive,
                     onStart = { viewModel.startWorkout() },
                     onPause = { viewModel.pauseWorkout() },
-                    onResume = { viewModel.resumeWorkout() },
                     onReset = { viewModel.resetCounter() }
                 )
+                Spacer(modifier = Modifier.height(20.dp))
             }
-            
-            // Error message
-            errorMessage?.let { error ->
-                Snackbar(
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(16.dp),
-                    action = {
-                        TextButton(onClick = { viewModel.clearError() }) {
-                            Text("Dismiss")
-                        }
-                    }
-                ) {
-                    Text(error)
-                }
-            }
+        }
+        
+        // Error Snackbar
+        errorMessage?.let { error ->
+            Snackbar(
+                modifier = Modifier.align(Alignment.TopCenter).padding(20.dp),
+                containerColor = MaterialTheme.colorScheme.errorContainer,
+                contentColor = MaterialTheme.colorScheme.onErrorContainer
+            ) { Text(error) }
         }
     }
 }
 
+// -----------------------------------------------------------------------------
+// COMPONENTS
+// -----------------------------------------------------------------------------
+
 /**
- * Top Info Panel - Count and Status
+ * Vertical Bar Depth Gauge
  */
 @Composable
-fun TopInfoPanel(
-    count: Int,
-    type: String,
-    state: PushupState,
-    duration: Long
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color.Black.copy(alpha = 0.7f)
+fun DepthGauge(depth: Float) {
+    val animatedDepth by animateFloatAsState(targetValue = depth, animationSpec = tween(100), label = "depth")
+    
+    Canvas(modifier = Modifier.fillMaxHeight().width(24.dp)) {
+        val barWidth = size.width
+        val barHeight = size.height
+        
+        // Background track
+        drawRoundRect(
+            color = Color.DarkGray.copy(alpha = 0.5f),
+            size = Size(barWidth, barHeight),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(12f)
         )
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            // Count
-            Text(
-                text = count.toString(),
-                style = MaterialTheme.typography.displayLarge,
-                color = Color(0xFF00FF00),
-                fontWeight = FontWeight.Bold
-            )
-            
-            Text(
-                text = "PUSHUPS",
-                style = MaterialTheme.typography.labelMedium,
-                color = Color.White
-            )
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            // Type
-            Text(
-                text = type,
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color.White
-            )
-            
-            // State
-            StateChip(state = state)
-            
-            // Duration
-            if (duration > 0) {
-                Text(
-                    text = formatDuration(duration),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.7f)
-                )
-            }
-        }
+        
+        // Good Rep Zone (Target) - Bottom 30%
+        val zoneTop = barHeight * 0.7f
+        drawRect(
+            color = Color(0xFF00FF99).copy(alpha = 0.2f),
+            topLeft = Offset(0f, zoneTop),
+            size = Size(barWidth, barHeight - zoneTop)
+        )
+
+        // Fill bar (From bottom up) - WRONG logic for pushups visually?
+        // Actually, let's fill from Top Down to mimic going down.
+        // Depth 0.0 (Top) -> Empty bar? Or Full at top?
+        // Let's visualize "Person" going down.
+        
+        // Let's do a "Piston" style.
+        val indicatorY = barHeight * animatedDepth
+        val color = if (animatedDepth > 0.8f) Color(0xFF00FF99) else Color(0xFF00E5FF)
+        
+        // Draw the fill
+        drawRoundRect(
+            color = color,
+            topLeft = Offset(0f, 0f),
+            size = Size(barWidth, indicatorY),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(12f)
+        )
+        
+        // Draw a "Limit" line at the bottom for perfect depth
+        drawLine(
+            color = Color.White,
+            start = Offset(-10f, barHeight * 0.9f),
+            end = Offset(barWidth + 10f, barHeight * 0.9f),
+            strokeWidth = 4f
+        )
     }
 }
 
 /**
- * State Chip - Shows current pushup state
+ * Neon Counter Text
  */
 @Composable
-fun StateChip(state: PushupState) {
-    val (color, text) = when (state) {
-        PushupState.IDLE -> Color.Gray to "Position Yourself"
-        PushupState.SETUP -> Color(0xFFFF9800) to "Setting Up"
-        PushupState.READY -> Color(0xFF00FFFF) to "Ready"
-        PushupState.DESCENDING -> Color(0xFFFF00FF) to "Going Down"
-        PushupState.BOTTOM -> Color.Red to "At Bottom"
-        PushupState.ASCENDING -> Color.Yellow to "Going Up"
-        PushupState.TOP -> Color.Green to "At Top"
-        PushupState.COUNTED -> Color.Green to "Rep Counted!"
+fun NeonCounter(count: Int) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        // Shadow/Glow
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                text = "$count",
+                style = TextStyle(
+                    fontSize = 140.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f), // Blur effect simulated
+                    textAlign = TextAlign.Center
+                ),
+                modifier = Modifier.offset(x = 4.dp, y = 4.dp)
+            )
+            Text(
+                text = "$count",
+                style = TextStyle(
+                    fontSize = 140.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.primary, // Main Neon color
+                    textAlign = TextAlign.Center
+                )
+            )
+        }
+        Text(
+            text = "REPS",
+            style = MaterialTheme.typography.titleLarge,
+            color = Color.White.copy(alpha = 0.7f),
+            letterSpacing = 4.sp
+        )
+    }
+}
+
+/**
+ * Floating Status Pill
+ */
+@Composable
+fun StatusPill(state: PushupState, feedback: String) {
+    val containerColor = when(state) {
+        PushupState.SETUP -> Color(0xFFFF9800).copy(alpha = 0.8f)
+        PushupState.COUNTED -> Color(0xFF00FF99).copy(alpha = 0.8f)
+        PushupState.BOTTOM -> Color(0xFF00E5FF).copy(alpha = 0.8f)
+        else -> Color(0xFF222222).copy(alpha = 0.8f)
     }
     
     Surface(
-        modifier = Modifier.padding(top = 8.dp),
-        shape = RoundedCornerShape(16.dp),
-        color = color.copy(alpha = 0.8f)
-    ) {
-        Text(
-            text = text,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-            style = MaterialTheme.typography.labelSmall,
-            color = Color.Black
-        )
-    }
-}
-
-/**
- * Feedback Panel - Form feedback and errors
- */
-@Composable
-fun FeedbackPanel(
-    feedback: List<String>,
-    invalidReasons: List<String>
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color.Black.copy(alpha = 0.8f)
-        )
-    ) {
-        Column(
-            modifier = Modifier.padding(12.dp)
-        ) {
-            // Valid feedback
-            if (feedback.isNotEmpty()) {
-                Text(
-                    text = "FEEDBACK",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFF00FFFF),
-                    fontWeight = FontWeight.Bold
-                )
-                
-                feedback.take(3).forEach { msg ->
-                    Row(
-                        modifier = Modifier.padding(top = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "• ",
-                            color = Color.White
-                        )
-                        Text(
-                            text = msg,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.White
-                        )
-                    }
-                }
-            }
-            
-            // Invalid reasons
-            if (invalidReasons.isNotEmpty()) {
-                if (feedback.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Divider(color = Color.White.copy(alpha = 0.3f))
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-                
-                Text(
-                    text = "INVALID REP",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.Red,
-                    fontWeight = FontWeight.Bold
-                )
-                
-                invalidReasons.take(2).forEach { reason ->
-                    Row(
-                        modifier = Modifier.padding(top = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "✗ ",
-                            color = Color.Red
-                        )
-                        Text(
-                            text = reason,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.White
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-/**
- * Metrics Panel - Angles and form score
- */
-@Composable
-fun MetricsPanel(
-    leftElbowAngle: Int,
-    rightElbowAngle: Int,
-    formScore: Float,
-    repTime: Float
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color.Black.copy(alpha = 0.7f)
-        )
+        color = containerColor,
+        shape = RoundedCornerShape(50),
+        modifier = Modifier.border(1.dp, Color.White.copy(alpha = 0.3f), RoundedCornerShape(50))
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly
+            modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            // Elbow angles
-            MetricItem(
-                label = "Left",
-                value = "${leftElbowAngle}°"
+            // Status Dot
+            Box(
+                modifier = Modifier
+                    .size(12.dp)
+                    .clip(CircleShape)
+                    .background(if (state == PushupState.IDLE) Color.Red else Color.White)
             )
+            Spacer(modifier = Modifier.width(12.dp))
             
-            MetricItem(
-                label = "Right",
-                value = "${rightElbowAngle}°"
+            val displayText = if (feedback.isNotEmpty()) feedback.uppercase() else state.name
+            Text(
+                text = displayText,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
             )
-            
-            // Form score
-            MetricItem(
-                label = "Form",
-                value = "${(formScore * 100).toInt()}%",
-                color = when {
-                    formScore > 0.8f -> Color.Green
-                    formScore > 0.5f -> Color.Yellow
-                    else -> Color.Red
-                }
-            )
-            
-            // Rep time
-            if (repTime > 0) {
-                MetricItem(
-                    label = "Time",
-                    value = "${String.format("%.1f", repTime)}s"
-                )
-            }
         }
     }
 }
 
 /**
- * Metric Item - Individual metric display
+ * Cyberpunk Controls
  */
 @Composable
-fun MetricItem(
-    label: String,
-    value: String,
-    color: Color = Color.White
-) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(
-            text = value,
-            style = MaterialTheme.typography.titleMedium,
-            color = color,
-            fontWeight = FontWeight.Bold
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = Color.White.copy(alpha = 0.7f)
-        )
-    }
-}
-
-/**
- * Control Panel - Workout controls
- */
-@Composable
-fun ControlPanel(
+fun CyberControls(
     isWorkoutActive: Boolean,
     onStart: () -> Unit,
     onPause: () -> Unit,
-    onResume: () -> Unit,
     onReset: () -> Unit
 ) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color.Black.copy(alpha = 0.8f)
-        )
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(24.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
+        // Reset Button
+        IconButton(
+            onClick = onReset,
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly
+                .size(56.dp)
+                .background(Color(0xFF222222), CircleShape)
+                .border(2.dp, Color(0xFF444444), CircleShape)
         ) {
-            // Start/Pause button
-            if (!isWorkoutActive) {
-                Button(
-                    onClick = onStart,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.Green
-                    )
-                ) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = "Start")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Start")
-                }
-            } else {
-                Button(
-                    onClick = onPause,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFFF9800)
-                    )
-                ) {
-                    Icon(Icons.Default.Pause, contentDescription = "Pause")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Pause")
-                }
-            }
-            
-            // Reset button
-            OutlinedButton(
-                onClick = onReset,
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = Color.White
-                )
-            ) {
-                Icon(Icons.Default.Refresh, contentDescription = "Reset")
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Reset")
-            }
+            Icon(Icons.Default.Refresh, "Reset", tint = Color.White)
+        }
+        
+        // Play/Pause Button (Big)
+        Button(
+            onClick = if (isWorkoutActive) onPause else onStart,
+            modifier = Modifier
+                .size(80.dp),
+            shape = CircleShape,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = if (isWorkoutActive) Color(0xFF00E5FF) else Color(0xFF00FF99)
+            ),
+            elevation = ButtonDefaults.buttonElevation(8.dp)
+        ) {
+            Icon(
+                imageVector = if (isWorkoutActive) Icons.Default.Pause else Icons.Default.PlayArrow,
+                contentDescription = if (isWorkoutActive) "Pause" else "Start",
+                tint = Color.Black,
+                modifier = Modifier.size(40.dp)
+            )
         }
     }
-}
-
-/**
- * Format duration in MM:SS
- */
-fun formatDuration(millis: Long): String {
-    val seconds = (millis / 1000).toInt()
-    val minutes = seconds / 60
-    val remainingSeconds = seconds % 60
-    return String.format("%d:%02d", minutes, remainingSeconds)
 }

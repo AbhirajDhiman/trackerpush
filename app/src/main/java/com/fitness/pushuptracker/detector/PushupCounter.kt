@@ -9,7 +9,7 @@ import kotlin.math.*
 
 // Necessary Enums and Data Classes for ViewModel compatibility
 enum class PushupState {
-    IDLE, READY, DESCENDING, BOTTOM, ASCENDING, COUNTED
+    IDLE, SETUP, READY, DESCENDING, BOTTOM, ASCENDING, COUNTED
 }
 
 enum class PushupType(val displayName: String) {
@@ -25,51 +25,143 @@ data class PushupResult(
     val formScore: Float = 0f,
     val feedback: String = "",
     val isValid: Boolean = true,
+    val pushupType: PushupType = PushupType.UNKNOWN,
     val currentType: PushupType = PushupType.UNKNOWN
 )
 
 class PushupCounter(private val strictMode: Boolean = false) {
     
     private var count = 0
-    private var internalState = "IDLE" // String state from user's sample
+    private var internalState = "SETUP" // Start in SETUP
     private var wasDown = false
+    
+    // Normalized depth (0.0 = top, 1.0 = bottom) for UI visualization
+    private var currentDepth = 0f
     
     private val _pushupResult = MutableStateFlow(PushupResult())
     val pushupResult: StateFlow<PushupResult> = _pushupResult.asStateFlow()
     
     fun processFrame(result: PoseLandmarkerResult, width: Int, height: Int) {
         try {
-            if (result.landmarks().isEmpty()) return
+            if (result.landmarks().isEmpty()) {
+                // Return empty result if no landmarks, but keep previous count
+                 _pushupResult.value = PushupResult(
+                    count = count,
+                    state = PushupState.IDLE,
+                    feedback = "No person detected"
+                )
+                return
+            }
+            
             val landmarks = result.landmarks()[0]
             if (landmarks.size < 16) return
             
-            // Indices: Shoulder(11), Elbow(13), Wrist(15)
-            val shoulder = landmarks[11]
-            val elbow = landmarks[13]
-            val wrist = landmarks[15]
+            // ===== BILATERAL ARM DETECTION =====
+            val leftShoulder = landmarks[11]
+            val leftElbow = landmarks[13]
+            val leftWrist = landmarks[15]
             
-            val angle = calculateAngle(shoulder.x(), shoulder.y(), elbow.x(), elbow.y(), wrist.x(), wrist.y())
-            val rightAngle = angle // Duplicate for simplicity
+            val rightShoulder = landmarks[12]
+            val rightElbow = landmarks[14]
+            val rightWrist = landmarks[16]
             
-            Log.d("SIMPLE", "📐 Angle: ${angle.toInt()}° | State: $internalState | Count: $count")
+            // Calculate angles for both arms
+            val leftAngle = calculateAngle(
+                leftShoulder.x(), leftShoulder.y(),
+                leftElbow.x(), leftElbow.y(),
+                leftWrist.x(), leftWrist.y()
+            )
             
-            // User's State Machine
+            val rightAngle = calculateAngle(
+                rightShoulder.x(), rightShoulder.y(),
+                rightElbow.x(), rightElbow.y(),
+                rightWrist.x(), rightWrist.y()
+            )
+            
+            // Get visibility scores (0.0 to 1.0)
+            val leftVisibility = leftElbow.visibility().orElse(0f)
+            val rightVisibility = rightElbow.visibility().orElse(0f)
+            
+            // Choose the arm with better visibility
+            val (angle, armSide) = if (leftVisibility >= rightVisibility) {
+                Pair(leftAngle, "LEFT")
+            } else {
+                Pair(rightAngle, "RIGHT")
+            }
+
+            // Calculate normalized depth for UI (roughly 170° is top, 70° is bottom)
+            // 0.0 = 170° (Top), 1.0 = 80° (Bottom)
+            currentDepth = ((170f - angle) / 90f).coerceIn(0f, 1.0f)
+            
+            Log.d("PUSHUP", "📐 $armSide Angle: ${angle.toInt()}° | Depth: ${String.format("%.2f", currentDepth)} | State: $internalState | Count: $count")
+            
+            var feedback = ""
+
+            // ===== STATE MACHINE (RELAXED) =====
             when (internalState) {
-                "IDLE" -> if (angle > 150) internalState = "TOP"
-                "TOP" -> if (angle < 140) internalState = "DOWN"
-                "DOWN" -> {
-                    if (angle < 100) wasDown = true
-                    if (angle > 130 && wasDown) internalState = "UP"
+                "SETUP" -> {
+                    feedback = "Get into pushup position"
+                    if (angle > 150) { // Arms straight(ish)
+                        internalState = "TOP"
+                        Log.d("PUSHUP", "✅ State: SETUP → TOP")
+                    } else if (angle < 100) {
+                        feedback = "Straighten your arms"
+                    }
                 }
-                "UP" -> if (angle > 150) { internalState = "COUNTED"; count++ }
-                "COUNTED" -> { internalState = "TOP"; wasDown = false }
+                "IDLE" -> {
+                     internalState = "SETUP" // Auto-transition to SETUP
+                }
+                "TOP" -> {
+                    feedback = "Go Down"
+                    if (angle < 140) { // Started descending
+                        internalState = "DOWN"
+                        Log.d("PUSHUP", "✅ State: TOP → DOWN")
+                    }
+                }
+                "DOWN" -> {
+                    feedback = "Lower..."
+                    if (angle < 100) {  // Good depth
+                        wasDown = true
+                        feedback = "Push Up!"
+                        Log.d("PUSHUP", "✅ Bottom reached at ${angle.toInt()}°")
+                    } else if (angle < 80) { // Deep
+                         feedback = "Perfect Depth!"
+                         wasDown = true
+                    }
+                    
+                    if (angle > 140) { // Coming up
+                        if (wasDown) {
+                            internalState = "UP"
+                            Log.d("PUSHUP", "✅ State: DOWN → UP")
+                        } else {
+                            // Aborted rep
+                            internalState = "TOP"
+                             feedback = "Rep too shallow"
+                        }
+                    }
+                }
+                "UP" -> {
+                    feedback = "Extend fully"
+                    if (angle > 160) {
+                        internalState = "COUNTED"
+                        count++
+                        Log.d("PUSHUP", "🎉 PUSHUP COUNTED! Total: $count")
+                    }
+                }
+                "COUNTED" -> {
+                    internalState = "TOP"
+                    wasDown = false
+                    feedback = "Ready"
+                    Log.d("PUSHUP", "✅ State: COUNTED → TOP (Ready for next rep)")
+                }
             }
             
             // Map to Enum
             val enumState = when(internalState) {
+                "SETUP" -> PushupState.SETUP
                 "IDLE" -> PushupState.IDLE
                 "TOP" -> PushupState.READY
-                "DOWN" -> PushupState.DESCENDING // Simplifying
+                "DOWN" -> PushupState.DESCENDING
                 "UP" -> PushupState.ASCENDING
                 "COUNTED" -> PushupState.COUNTED
                 else -> PushupState.IDLE
@@ -78,12 +170,14 @@ class PushupCounter(private val strictMode: Boolean = false) {
             _pushupResult.value = PushupResult(
                 count = count,
                 state = enumState,
-                leftElbowAngle = angle,
-                rightElbowAngle = rightAngle
+                leftElbowAngle = leftAngle,
+                rightElbowAngle = rightAngle,
+                formScore = currentDepth, // HACK: Passing depth as formScore for now so UI can use it
+                feedback = feedback
             )
             
         } catch (e: Exception) {
-            Log.e("SIMPLE", "Error: ${e.message}")
+            Log.e("PUSHUP", "❌ Error: ${e.message}", e)
         }
     }
     
@@ -100,5 +194,5 @@ class PushupCounter(private val strictMode: Boolean = false) {
     
     fun getCurrentResult() = _pushupResult.value
     fun toggleStrictMode() {}
-    fun reset() { count = 0; internalState = "IDLE"; wasDown = false; _pushupResult.value = PushupResult() }
+    fun reset() { count = 0; internalState = "SETUP"; wasDown = false; _pushupResult.value = PushupResult() }
 }

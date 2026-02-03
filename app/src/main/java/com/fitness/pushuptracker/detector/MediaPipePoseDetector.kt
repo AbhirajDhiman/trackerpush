@@ -35,7 +35,7 @@ class MediaPipePoseDetector(
     
     companion object {
         private const val MODEL_NAME = "pose_landmarker_lite.task"
-        private const val MIN_CONFIDENCE = 0.5f  // ✅ Changed from 0.7f to 0.5f per requirements
+        private const val MIN_CONFIDENCE = 0.4f  // ✅ Lowered to 0.4f for better detection in low light
     }
     
     /**
@@ -73,8 +73,8 @@ class MediaPipePoseDetector(
             
             val options = PoseLandmarker.PoseLandmarkerOptions.builder()
                 .setBaseOptions(baseOptions)
-                .setRunningMode(RunningMode.VIDEO)  // ✅ Changed from LIVE_STREAM to VIDEO per requirements
-                .setNumPoses(1)  // ✅ Detect only 1 person per requirements
+                .setRunningMode(RunningMode.LIVE_STREAM)  // ✅ LIVE_STREAM for real-time camera
+                .setNumPoses(1)  // Detect only 1 person
                 .setMinPoseDetectionConfidence(MIN_CONFIDENCE)  // 0.5f
                 .setMinPosePresenceConfidence(MIN_CONFIDENCE)   // 0.5f
                 .setMinTrackingConfidence(MIN_CONFIDENCE)       // 0.5f
@@ -87,7 +87,7 @@ class MediaPipePoseDetector(
                 }
                 .build()
             
-            android.util.Log.d("MediaPipeDebug", "📋 Configuration: RunningMode=VIDEO, NumPoses=1, MinConfidence=${MIN_CONFIDENCE}")
+            android.util.Log.d("MediaPipeDebug", "📋 Configuration: RunningMode=LIVE_STREAM, NumPoses=1, MinConfidence=${MIN_CONFIDENCE}")
             
             // 3. Create detector
             poseLandmarker = PoseLandmarker.createFromOptions(context, options)
@@ -127,8 +127,8 @@ class MediaPipePoseDetector(
             // Convert to MPImage
             val mpImage = BitmapImageBuilder(bitmap).build()
             
-            // Get timestamp in milliseconds
-            val timestampMs = System.currentTimeMillis()
+            // Get timestamp in microseconds (LIVE_STREAM requires microseconds)
+            val timestampMs = System.nanoTime() / 1_000
             
             // Detect pose asynchronously
             poseLandmarker?.detectAsync(mpImage, timestampMs)
@@ -162,7 +162,7 @@ class MediaPipePoseDetector(
         if (landmarks.isEmpty()) {
             // Log when no person detected (every 30 frames)
             if (resultCount % 30 == 0) {
-                android.util.Log.d("MediaPipeDebug", "⚠️ No person detected in frame #$resultCount")
+                android.util.Log.d("MediaPipeDebug", "⚠️ No person detected in frame #$resultCount. Try moving further back or checking lighting.")
             }
         } else {
             // Person detected!
@@ -191,6 +191,13 @@ class MediaPipePoseDetector(
                     if (leftWrist != null) {
                         android.util.Log.d("MediaPipeDebug", "💪 L-Wrist: (${String.format("%.3f", leftWrist.x())}, ${String.format("%.3f", leftWrist.y())}), visibility=${String.format("%.2f", leftWrist.visibility().orElse(0f))}")
                     }
+                }
+
+                // Check critical landmarks for pushups
+                if (landmarkCount > 24) {
+                     val leftHip = firstPose[23]
+                     val rightHip = firstPose[24]
+                     android.util.Log.d("MediaPipeDebug", "🦵 Hips: L=${String.format("%.2f", leftHip.visibility().orElse(0f))} R=${String.format("%.2f", rightHip.visibility().orElse(0f))}")
                 }
             }
         }
